@@ -51,10 +51,15 @@ class Tag(object):
 
 class LogEntry(object):
 
-    def __init__(self, msg, affected_paths, author):
+    def __init__(self, msg, affected_paths, author, package_names=None):
         self.msg = msg
         self.author = author
         self._affected_paths = [p for p in affected_paths if p]
+        # List of package names that a log entry is associated with.
+        if package_names:
+            self._package_names = package_names
+        else:
+            self._package_names = []
 
     def affects_path(self, path):
         for apath in self._affected_paths:
@@ -65,6 +70,12 @@ class LogEntry(object):
             if apath.startswith(os.path.join(path, '')):
                 return True
         return False
+
+    def add_package_name(self, package_name):
+        self._package_names.append(package_name)
+
+    def get_package_names(self):
+        return self._package_names
 
 
 class VcsClientBase(object):

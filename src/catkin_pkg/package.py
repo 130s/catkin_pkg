@@ -267,6 +267,13 @@ class Package(object):
         if errors:
             raise InvalidPackage('\n'.join(errors))
 
+    def get_depends(self):
+        '''
+        Returning all dependency package.
+        @rtype: [catkin_pkg.package.Dependency]
+        '''
+        return self.build_depends + self.build_export_depends + self.doc_depends + self.exec_depends
+
 
 class Dependency(object):
     __slots__ = ['name', 'version_lt', 'version_lte', 'version_eq', 'version_gte', 'version_gt']

@@ -39,9 +39,13 @@ def prompt_continue(msg, default):
 
 
 def main(sysargs=None):
+    print('DEBUG)main: {}')
+
     parser = argparse.ArgumentParser(description='Generate a REP-0132 %s' % CHANGELOG_FILENAME)
     parser.add_argument('-a', '--all', action='store_true', default=False,
         help='Generate changelog for all versions instead of only the forthcoming one (only supported when no changelog file exists yet)')
+    parser.add_argument('-c', '--consolidate', action='store_true',
+        default=False, help='Consolidate changelogs into the changelog file in metapackage(s).')
     parser.add_argument('--print-root', action='store_true', default=False,
         help='Output changelog content to the console as if there would be only one package in the root of the repository')
     parser.add_argument('--skip-contributors', action='store_true', default=False,
@@ -56,6 +60,9 @@ def main(sysargs=None):
     logging.basicConfig(format='%(message)s', level=logging.DEBUG)
 
     vcs_client = get_vcs_client(base_path)
+
+    # Whether or not to include package name in each log entry.
+    include_packagename = False
 
     if args.print_root:
         # printing status messages to stderr to allow piping the changelog to a file
@@ -99,23 +106,44 @@ def main(sysargs=None):
         if not args.non_interactive and not prompt_continue('Continue without --all option', default=False):
             raise RuntimeError('Skipping generation, rerun the script with --all.')
 
+    if args.consolidate:
+        include_packagename = True
+
     if args.all:
         print('Querying all tags and commit information...')
         tag2log_entries = get_all_changes(vcs_client, skip_merges=args.skip_merges)
         print('Generating changelog files with all versions...')
-        generate_changelogs(base_path, packages, tag2log_entries, logger=logging, vcs_client=vcs_client, skip_contributors=args.skip_contributors)
+        generate_changelogs(
+            base_path, packages, tag2log_entries, logger=logging,
+            vcs_client=vcs_client, skip_contributors=args.skip_contributors,
+            include_packagename=include_packagename)
     else:
         print('Querying commit information since latest tag...')
         tag2log_entries = get_forthcoming_changes(vcs_client, skip_merges=args.skip_merges)
         # separate packages with/without a changelog file
+        #print('DEBUG) tag2log_entries: {}'.format(tag2log_entries))
         packages_without = {pkg_path: package for pkg_path, package in packages.items() if package.name in missing_changelogs}
         if packages_without:
             print('Generating changelog files with forthcoming version...')
-            generate_changelogs(base_path, packages_without, tag2log_entries, logger=logging, vcs_client=vcs_client, skip_contributors=args.skip_contributors)
+            generate_changelogs(
+                base_path, packages_without, tag2log_entries, logger=logging,
+                vcs_client=vcs_client, skip_contributors=args.skip_contributors,
+                include_packagename=include_packagename)
         packages_with = {pkg_path: package for pkg_path, package in packages.items() if package.name not in missing_changelogs}
         if packages_with:
             print('Updating forthcoming section of changelog files...')
-            update_changelogs(base_path, packages_with, tag2log_entries, logger=logging, vcs_client=vcs_client, skip_contributors=args.skip_contributors)
+            update_changelogs(
+                base_path, packages_with, tag2log_entries, logger=logging,
+                vcs_client=vcs_client, skip_contributors=args.skip_contributors,
+                include_packagename=include_packagename)
+
+    if args.consolidate:
+        # Get a list of metapackage(s)
+
+        # For each metapackage, move the changelog entries into the changelog
+        # file in metapackage.
+        pass
+
     print('Done.')
     print('Please review the extracted commit messages and consolidate the changelog entries before committing the files!')
 

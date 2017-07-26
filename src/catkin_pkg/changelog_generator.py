@@ -98,7 +98,16 @@ def _get_latest_version_tag_name(vcs_client):
     return version_tag_name
 
 
-def generate_changelogs(base_path, packages, tag2log_entries, logger=None, vcs_client=None, skip_contributors=False):
+def generate_changelogs(
+        base_path, packages, tag2log_entries, logger=None,
+        vcs_client=None, skip_contributors=False, include_packagename=False):
+
+    # If include_packagename is True, use this as a storage for metapackage and
+    # metapackage needs to be processed at the last iteration where all
+    # packages are already processed.
+    metapackages_data = {}
+    packages_data = {}  # key: package name, content: data instance
+
     for pkg_path, package in packages.items():
         changelog_path = os.path.join(base_path, pkg_path, CHANGELOG_FILENAME)
         if os.path.exists(changelog_path):
@@ -106,24 +115,63 @@ def generate_changelogs(base_path, packages, tag2log_entries, logger=None, vcs_c
         # generate package specific changelog file
         if logger:
             logger.debug("- creating '%s'" % os.path.join(pkg_path, CHANGELOG_FILENAME))
-        pkg_tag2log_entries = filter_package_changes(tag2log_entries, pkg_path)
-        data = generate_changelog_file(package.name, pkg_tag2log_entries, vcs_client=vcs_client, skip_contributors=skip_contributors)
-        with open(changelog_path, 'wb') as f:
-            f.write(data.encode('utf-8'))
+        pkg_tag2log_entries = filter_package_changes(
+            tag2log_entries, pkg_path)
+        data = generate_changelog_file(
+            package.name,
+            pkg_tag2log_entries,
+            vcs_client=vcs_client,
+            skip_contributors=skip_contributors,
+            include_packagename=include_packagename,
+            is_metapkg=package.is_metapackage())
+        if include_packagename and package.is_metapackage():
+            metapackages_data[package.name] = data
+        else:
+            packages_data[package.name] = data
+            with open(changelog_path, 'wb') as f:
+                f.write(data.encode('utf-8'))
+
+    if include_packagename:
+        for metapkg in metapackages_data:
+            # TODO Collect log entries only for the packages that belong to
+            #      the metapackage.
+            # TODO Get all depended packages
+            print('DEBUG) metapkg.exec_depends: {}'.format(metapkg.exec_depends))
 
 
-def update_changelogs(base_path, packages, tag2log_entries, logger=None, vcs_client=None, skip_contributors=False):
-    for pkg_path in packages.keys():
+def update_changelogs(base_path, packages, tag2log_entries, logger=None,
+                      vcs_client=None, skip_contributors=False,
+                      include_packagename=False):
+    metapackages_data = {}
+    packages_data = {}  # key: package name, content: data instance
+    print('DEBUG) packages: {}\n'.format(packages))
+    for pkg_path, package in packages.items():
         # update package specific changelog file
         if logger:
             logger.debug("- updating '%s'" % os.path.join(pkg_path, CHANGELOG_FILENAME))
-        pkg_tag2log_entries = filter_package_changes(tag2log_entries, pkg_path)
+        pkg_tag2log_entries = filter_package_changes(
+            tag2log_entries, pkg_path)
         changelog_path = os.path.join(base_path, pkg_path, CHANGELOG_FILENAME)
         with open(changelog_path, 'rb') as f:
             data = f.read().decode('utf-8')
-        data = update_changelog_file(data, pkg_tag2log_entries, vcs_client=vcs_client, skip_contributors=skip_contributors)
-        with open(changelog_path, 'wb') as f:
-            f.write(data.encode('utf-8'))
+        data = update_changelog_file(
+            data, pkg_tag2log_entries, vcs_client=vcs_client,
+            skip_contributors=skip_contributors,
+            include_packagename=include_packagename)
+        if include_packagename and package.is_metapackage():
+            metapackages_data[package] = data
+        else:
+            packages_data[package.name] = data
+            with open(changelog_path, 'wb') as f:
+                f.write(data.encode('utf-8'))
+
+    if include_packagename:
+        for metapkg, data in metapackages_data.items():
+            # TODO Collect log entries only for the packages that belong to
+            #      the metapackage.
+            # TODO Get all depended packages
+            depended_pkg_names = [pkg.name for pkg in metapkg.get_depends()]
+            print('DEBUG) pkg: {}\n\tdepended_pkg_names: {}'.format(metapkg.name, depended_pkg_names))
 
 
 def filter_package_changes(tag2log_entries, pkg_path):
@@ -135,31 +183,38 @@ def filter_package_changes(tag2log_entries, pkg_path):
         else:
             pkg_log_entries = []
             for log_entry in log_entries:
+                log_entry.add_package_name(pkg_path)
                 if log_entry.affects_path(pkg_path):
                     pkg_log_entries.append(log_entry)
         pkg_tag2log_entries[tag] = pkg_log_entries
     return pkg_tag2log_entries
 
 
-def generate_changelog_file(pkg_name, tag2log_entries, vcs_client=None, skip_contributors=False):
+def generate_changelog_file(
+        pkg_name, tag2log_entries, vcs_client=None, skip_contributors=False,
+        include_packagename=False, is_metapkg=False):
     blocks = []
     blocks.append(generate_package_headline(pkg_name))
-
+    print('DEBUG) is_metap? {}'.format(is_metapkg))
     for tag in sorted_tags(tag2log_entries.keys()):
         log_entries = tag2log_entries[tag]
         if log_entries is not None:
-            blocks.append(generate_version_block(tag.name, tag.timestamp, log_entries, vcs_client=vcs_client, skip_contributors=skip_contributors))
+            blocks.append(generate_version_block(
+                tag.name, tag.timestamp, log_entries, vcs_client=vcs_client,
+                skip_contributors=skip_contributors,
+                include_packagename=include_packagename,
+                is_metapkg=is_metapkg))
 
     return '\n'.join(blocks)
 
 
-def update_changelog_file(data, tag2log_entries, vcs_client=None, skip_contributors=False):
+def update_changelog_file(data, tag2log_entries, vcs_client=None, skip_contributors=False, include_packagename=False, is_metapkg=False):
     tags = sorted_tags(tag2log_entries.keys())
     for i, tag in enumerate(tags):
         log_entries = tag2log_entries[tag]
         if log_entries is None:
             continue
-        content = generate_version_content(log_entries, vcs_client=vcs_client, skip_contributors=skip_contributors)
+        content = generate_version_content(log_entries, vcs_client=vcs_client, skip_contributors=skip_contributors, include_packagename=include_packagename, is_metapkg=is_metapkg)
 
         # check if version section exists
         match = get_version_section_match(data, tag.name)
@@ -172,7 +227,7 @@ def update_changelog_file(data, tag2log_entries, vcs_client=None, skip_contribut
             for next_tag in list(tags)[i:]:
                 match = get_version_section_match(data, next_tag.name)
                 if match:
-                    block = generate_version_block(tag.name, tag.timestamp, log_entries, vcs_client=vcs_client, skip_contributors=skip_contributors)
+                    block = generate_version_block(tag.name, tag.timestamp, log_entries, vcs_client=vcs_client, skip_contributors=skip_contributors, include_packagename=include_packagename, is_metapkg=is_metapkg)
                     data = data[:match.start()] + block + '\n' + data[match.start():]
                     break
             if not match:
@@ -235,9 +290,9 @@ def generate_package_headline(pkg_name):
     return '%s\n%s\n%s\n' % (section_marker, headline, section_marker)
 
 
-def generate_version_block(version, timestamp, log_entries, vcs_client=None, skip_contributors=False):
+def generate_version_block(version, timestamp, log_entries, vcs_client=None, skip_contributors=False, include_packagename=False, is_metapkg=False):
     data = generate_version_headline(version, timestamp)
-    data += generate_version_content(log_entries, vcs_client=vcs_client, skip_contributors=skip_contributors)
+    data += generate_version_content(log_entries, vcs_client=vcs_client, skip_contributors=skip_contributors, include_packagename=include_packagename, is_metapkg=is_metapkg)
     return data
 
 
@@ -255,10 +310,14 @@ def get_version_headline(version, timestamp):
     return headline
 
 
-def generate_version_content(log_entries, vcs_client=None, skip_contributors=False):
+def generate_version_content(
+        log_entries, vcs_client=None, skip_contributors=False,
+        include_packagename=False,
+        is_metapkg=False):
     data = ''
     all_authors = set()
     for entry in log_entries:
+        package_names = entry.get_package_names()
         msg = entry.msg
         lines = msg.splitlines()
         lines = [l.strip() for l in lines]
@@ -266,6 +325,10 @@ def generate_version_content(log_entries, vcs_client=None, skip_contributors=Fal
         lines = [escape_trailing_underscores(l) for l in lines]
         data += '* %s\n' % (replace_repository_references(lines[0], vcs_client=vcs_client) if lines else '')
         for line in lines[1:]:
+            if include_packagename and is_metapkg:
+                # Expand the list of package names to create a prefix
+                # e.g. [pkg1][pkg2]...[pkgN]
+                line = '[' + "][".join(map(str, package_names)) + '] ' + line
             data += '  %s\n' % replace_repository_references(line, vcs_client=vcs_client)
         all_authors.add(entry.author)
     if all_authors and not skip_contributors:
