@@ -17,6 +17,7 @@ from catkin_pkg.packages import find_packages, verify_equal_package_versions
 
 def get_forthcoming_label(rst):
     document = docutils.core.publish_doctree(rst)
+    print("DEBUG) document: {}".format(document))
     forthcoming_label = None
     for child in document.children:
         title = None

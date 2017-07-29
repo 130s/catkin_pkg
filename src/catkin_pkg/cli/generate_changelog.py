@@ -39,8 +39,6 @@ def prompt_continue(msg, default):
 
 
 def main(sysargs=None):
-    print('DEBUG)main: {}')
-
     parser = argparse.ArgumentParser(description='Generate a REP-0132 %s' % CHANGELOG_FILENAME)
     parser.add_argument('-a', '--all', action='store_true', default=False,
         help='Generate changelog for all versions instead of only the forthcoming one (only supported when no changelog file exists yet)')

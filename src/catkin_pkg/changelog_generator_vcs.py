@@ -62,13 +62,17 @@ class LogEntry(object):
             self._package_names = []
 
     def affects_path(self, path):
+        print('DEBUG) self._affected_paths: {}'.format(self._affected_paths))
         for apath in self._affected_paths:
             # if the path is the root of the repository
             # it is affected by all changes
             if path == '.':
+                print('DEBUG) affects_path True 1')
                 return True
             if apath.startswith(os.path.join(path, '')):
+                print('DEBUG) affects_path True 2')
                 return True
+        print('DEBUG) affects_path False')
         return False
 
     def add_package_name(self, package_name):
